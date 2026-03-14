@@ -236,6 +236,11 @@ extern "C" fn rust_main() -> ! {
                     let args = [ctx.a(0), ctx.a(1), ctx.a(2), ctx.a(3), ctx.a(4), ctx.a(5)];
                     let syscall_ret = tg_syscall::handle(Caller { entity: 0, flow: 0 }, id, args);
 
+                    match syscall_ret {
+                        Ret::Done(ret) if id != Id::EXIT => *ctx.a_mut(0) = ret as _,
+                        _ => {}
+                    }
+
                     // ─── 本章新增：信号处理 ───
                     // 在系统调用返回用户态之前，检查并处理待处理信号。
                     // 注意：这只是一个简化的实现位置。理想情况下，
@@ -249,11 +254,7 @@ extern "C" fn rust_main() -> ! {
                         _ => match syscall_ret {
                             Ret::Done(ret) => match id {
                                 Id::EXIT => unsafe { (*processor).make_current_exited(ret) },
-                                _ => {
-                                    let ctx = &mut task.context.context;
-                                    *ctx.a_mut(0) = ret as _;
-                                    unsafe { (*processor).make_current_suspend() };
-                                }
+                                _ => unsafe { (*processor).make_current_suspend() },
                             },
                             Ret::Unsupported(_) => {
                                 log::info!("id = {id:?}");
@@ -361,7 +362,11 @@ mod impls {
         processor::ProcManager,
         Sv39, PROCESSOR,
     };
-    use alloc::{alloc::alloc_zeroed, string::String, vec::Vec};
+    use alloc::{
+        alloc::{alloc_zeroed, dealloc},
+        string::String,
+        vec::Vec,
+    };
     use core::{alloc::Layout, ptr::NonNull};
     use spin::Mutex;
     use tg_console::log;
@@ -428,11 +433,29 @@ mod impls {
             *flags |= Self::OWNED;
             NonNull::new(Self::page_alloc(len)).unwrap()
         }
-        fn deallocate(&mut self, _pte: Pte<Sv39>, _len: usize) -> usize {
-            todo!()
+        fn deallocate(&mut self, pte: Pte<Sv39>, len: usize) -> usize {
+            let ptr: NonNull<u8> = self.p_to_v(pte.ppn());
+            unsafe {
+                dealloc(
+                    ptr.as_ptr(),
+                    Layout::from_size_align_unchecked(
+                        len << Sv39::PAGE_BITS,
+                        1 << Sv39::PAGE_BITS,
+                    ),
+                );
+            }
+            len
         }
         fn drop_root(&mut self) {
-            todo!()
+            unsafe {
+                dealloc(
+                    self.0.as_ptr() as *mut u8,
+                    Layout::from_size_align_unchecked(
+                        1 << Sv39::PAGE_BITS,
+                        1 << Sv39::PAGE_BITS,
+                    ),
+                );
+            }
         }
     }
 

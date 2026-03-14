@@ -59,13 +59,14 @@ pub struct Process {
 }
 
 impl Process {
-    /// exec：用新程序替换当前进程（保留 PID、fd_table 和 signal）
+    /// exec：用新程序替换当前进程（保留 PID、fd_table，重置信号处理配置）
     pub fn exec(&mut self, elf: ElfFile) {
         let proc = Process::from_elf(elf).unwrap();
         self.address_space = proc.address_space;
         self.context = proc.context;
         self.heap_bottom = proc.heap_bottom;
         self.program_brk = proc.program_brk;
+        self.signal.clear();
     }
 
     /// fork：复制当前进程创建子进程

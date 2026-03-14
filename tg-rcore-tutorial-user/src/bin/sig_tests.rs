@@ -15,7 +15,9 @@ fn func() {
 
 fn func2() {
     loop {
-        print!("");
+        // ch7 的教学实现只在 trap 返回前递送信号，因此这里主动 yield，
+        // 让后续 signal 能继续被观察到。
+        sched_yield();
     }
 }
 

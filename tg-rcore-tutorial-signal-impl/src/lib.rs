@@ -11,7 +11,7 @@
 #![deny(warnings, missing_docs)]
 
 extern crate alloc;
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 use tg_kernel_context::LocalContext;
 use tg_signal::{Signal, SignalAction, SignalNo, SignalResult, MAX_SIG};
 
@@ -20,22 +20,16 @@ use default_action::DefaultAction;
 mod signal_set;
 use signal_set::SignalSet;
 
-/// 正在处理的信号状态。
-pub enum HandlingSignal {
-    /// 进程被冻结（收到 SIGSTOP 等信号），需要暂停当前进程
-    Frozen,
-    /// 正在处理用户信号，保存了之前的用户上下文
-    UserSignal(LocalContext),
-}
-
 /// 管理一个进程中的信号
 pub struct SignalImpl {
     /// 已收到的信号
     received: SignalSet,
     /// 屏蔽的信号掩码
     mask: SignalSet,
-    /// 在信号处理函数中，保存之前的用户栈
-    handling: Option<HandlingSignal>,
+    /// 进程是否因 SIGSTOP 处于冻结态
+    frozen: bool,
+    /// 处理用户信号时保存被打断的上下文，支持嵌套 signal handler
+    handling: Vec<LocalContext>,
     /// 当前任务的信号处理函数集
     actions: [Option<SignalAction>; MAX_SIG + 1],
 }
@@ -46,7 +40,8 @@ impl SignalImpl {
         Self {
             received: SignalSet::empty(),
             mask: SignalSet::empty(),
-            handling: None,
+            frozen: false,
+            handling: Vec::new(),
             actions: [None; MAX_SIG + 1],
         }
     }
@@ -86,7 +81,8 @@ impl Signal for SignalImpl {
         Box::new(Self {
             received: SignalSet::empty(),
             mask: self.mask,
-            handling: None,
+            frozen: false,
+            handling: Vec::new(),
             actions: {
                 let mut actions = [None; MAX_SIG + 1];
                 actions.copy_from_slice(&self.actions);
@@ -96,6 +92,10 @@ impl Signal for SignalImpl {
     }
 
     fn clear(&mut self) {
+        self.received.clear();
+        self.mask.clear();
+        self.frozen = false;
+        self.handling.clear();
         for action in &mut self.actions {
             action.take();
         }
@@ -108,7 +108,7 @@ impl Signal for SignalImpl {
 
     /// 是否当前正在处理信号
     fn is_handling_signal(&self) -> bool {
-        self.handling.is_some()
+        self.frozen || !self.handling.is_empty()
     }
 
     /// 设置一个信号处理函数。`sys_sigaction` 会使用
@@ -139,65 +139,51 @@ impl Signal for SignalImpl {
         // 状态机入口：
         // A. 若已在处理信号，则只处理可恢复情形（例如 Frozen + SIGCONT）；
         // B. 否则从 pending 集合提取一个可投递信号并执行默认或用户动作。
-        if self.is_handling_signal() {
-            match self.handling.as_ref().unwrap() {
-                // 如果当前正在暂停状态
-                HandlingSignal::Frozen => {
-                    // 则检查是否收到 SIGCONT，如果收到则当前任务需要从暂停状态中恢复
-                    if self.fetch_and_remove(SignalNo::SIGCONT) {
-                        self.handling.take();
-                        SignalResult::Handled
-                    } else {
-                        // 否则，继续暂停
-                        SignalResult::ProcessSuspended
-                    }
-                } // 其他情况下，需要等待当前信号处理结束
-                _ => SignalResult::IsHandlingSignal,
+        if self.fetch_and_remove(SignalNo::SIGKILL) {
+            return SignalResult::ProcessKilled(-(SignalNo::SIGKILL as i32));
+        }
+
+        if self.frozen {
+            if self.fetch_and_remove(SignalNo::SIGCONT) {
+                self.frozen = false;
+                return SignalResult::Handled;
             }
-        } else if let Some(signal) = self.fetch_signal() {
+            return SignalResult::ProcessSuspended;
+        }
+
+        if let Some(signal) = self.fetch_signal() {
             match signal {
-                // SIGKILL 信号不能被捕获或忽略
                 SignalNo::SIGKILL => SignalResult::ProcessKilled(-(signal as i32)),
                 SignalNo::SIGSTOP => {
-                    self.handling = Some(HandlingSignal::Frozen);
+                    self.frozen = true;
                     SignalResult::ProcessSuspended
                 }
                 _ => {
                     if let Some(action) = self.actions[signal as usize] {
-                        // 如果用户给定了处理方式，则按照 SignalAction 中的描述处理
-                        // 保存原来用户程序的上下文信息
-                        self.handling = Some(HandlingSignal::UserSignal(current_context.clone()));
-                        // 修改返回后的 pc 值为 handler，修改 a0 为信号编号
-                        //println!("handle pre {:x}, after {:x}", current_context.pc(), action.handler);
+                        // 用户态 handler 可以被更高层后续信号再次打断，因此用栈保存上下文。
+                        self.handling.push(current_context.clone());
                         *current_context.pc_mut() = action.handler;
                         *current_context.a_mut(0) = signal as usize;
                         SignalResult::Handled
                     } else {
-                        // 否则，使用自定义的 DefaultAction 类来处理
-                        // 然后再转换成 SignalResult
                         DefaultAction::from(signal).into()
                     }
                 }
             }
+        } else if self.is_handling_signal() {
+            SignalResult::IsHandlingSignal
         } else {
             SignalResult::NoSignal
         }
     }
 
     fn sig_return(&mut self, current_context: &mut LocalContext) -> bool {
-        let handling_signal = self.handling.take();
-        match handling_signal {
-            Some(HandlingSignal::UserSignal(old_ctx)) => {
-                // 用户 handler 执行完毕，恢复被中断前上下文。
-                //println!("return to {:x} a0 {}", old_ctx.pc(), old_ctx.a(0));
-                *current_context = old_ctx;
-                true
-            }
-            // 如果当前在处理内核信号，或者没有在处理信号，也就谈不上“返回”了
-            _ => {
-                self.handling = handling_signal;
-                false
-            }
+        if let Some(old_ctx) = self.handling.pop() {
+            // 用户 handler 执行完毕，恢复被信号打断前的最近一层上下文。
+            *current_context = old_ctx;
+            true
+        } else {
+            false
         }
     }
 }

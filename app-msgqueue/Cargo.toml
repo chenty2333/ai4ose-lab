@@ -32,7 +32,10 @@ path = "xtask/src/main.rs"
 required-features = ["xtask"]
 
 [dependencies]
-axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging", "multitask"], optional = true }
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc-level-1"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
+
+[patch.crates-io]
+axalloc = { path = "vendor-axalloc" }
 
 [profile.release]

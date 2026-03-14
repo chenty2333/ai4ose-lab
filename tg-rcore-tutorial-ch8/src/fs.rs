@@ -65,8 +65,37 @@ impl FSManager for FileSystem {
         Some(self.root.readdir())
     }
 
-    fn link(&self, _src: &str, _dst: &str) -> isize { unimplemented!() }
-    fn unlink(&self, _path: &str) -> isize { unimplemented!() }
+    fn link(&self, src: &str, dst: &str) -> isize {
+        if src == dst {
+            return -1;
+        }
+        if let Some(src_inode) = self.find(src) {
+            if self.find(dst).is_some() {
+                return -1;
+            }
+            let inode_id = src_inode.get_inode_id();
+            src_inode.link();
+            if self.root.link_to(dst, inode_id).is_some() {
+                0
+            } else {
+                -1
+            }
+        } else {
+            -1
+        }
+    }
+    fn unlink(&self, path: &str) -> isize {
+        if let Some(inode) = self.find(path) {
+            if self.root.remove_dirent(path).is_some() {
+                inode.unlink();
+                0
+            } else {
+                -1
+            }
+        } else {
+            -1
+        }
+    }
 }
 
 /// 读取文件全部内容到 Vec<u8>

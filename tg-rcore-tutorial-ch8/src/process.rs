@@ -27,7 +27,7 @@ use crate::{
     build_flags, fs::Fd, map_portal, parse_flags, processor::ProcessorInner, Sv39, Sv39Manager,
     PROCESSOR,
 };
-use alloc::{alloc::alloc_zeroed, boxed::Box, sync::Arc, vec::Vec};
+use alloc::{alloc::alloc_zeroed, boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 use core::alloc::Layout;
 use spin::Mutex;
 use tg_kernel_context::{foreign::ForeignContext, LocalContext};
@@ -43,6 +43,211 @@ use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     program, ElfFile,
 };
+
+/// 死锁检测状态（按进程维护）。
+///
+/// 练习要求允许 mutex 和 semaphore 分别检测，无需考虑二者混用。
+#[derive(Default)]
+pub struct DeadlockState {
+    /// 当前进程是否启用死锁检测。
+    pub enabled: bool,
+    mutex_owners: Vec<Option<ThreadId>>,
+    mutex_waiting: BTreeMap<ThreadId, usize>,
+    sem_available: Vec<usize>,
+    sem_allocation: BTreeMap<ThreadId, Vec<usize>>,
+    sem_need: BTreeMap<ThreadId, Vec<usize>>,
+}
+
+impl DeadlockState {
+    /// 开关死锁检测。
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    /// 注册一把 mutex 资源。
+    pub fn register_mutex(&mut self, mutex_id: usize) {
+        if self.mutex_owners.len() <= mutex_id {
+            self.mutex_owners.resize(mutex_id + 1, None);
+        }
+    }
+
+    /// 注册一个 semaphore 资源，并更新初始可用数量。
+    pub fn register_semaphore(&mut self, sem_id: usize, count: usize) {
+        if self.sem_available.len() <= sem_id {
+            self.sem_available.resize(sem_id + 1, 0);
+            for allocation in self.sem_allocation.values_mut() {
+                allocation.resize(sem_id + 1, 0);
+            }
+            for need in self.sem_need.values_mut() {
+                need.resize(sem_id + 1, 0);
+            }
+        }
+        self.sem_available[sem_id] = count;
+    }
+
+    fn ensure_sem_thread(&mut self, tid: ThreadId) {
+        let resource_count = self.sem_available.len();
+        let allocation = self.sem_allocation.entry(tid).or_default();
+        if allocation.len() < resource_count {
+            allocation.resize(resource_count, 0);
+        }
+        let need = self.sem_need.entry(tid).or_default();
+        if need.len() < resource_count {
+            need.resize(resource_count, 0);
+        }
+    }
+
+    /// 检查 mutex 请求是否会形成等待环。
+    pub fn mutex_should_deadlock(&self, tid: ThreadId, mutex_id: usize) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let Some(Some(owner)) = self.mutex_owners.get(mutex_id) else {
+            return false;
+        };
+        if *owner == tid {
+            return true;
+        }
+        let mut cursor = *owner;
+        while let Some(waiting_mutex) = self.mutex_waiting.get(&cursor) {
+            let Some(Some(next_owner)) = self.mutex_owners.get(*waiting_mutex) else {
+                return false;
+            };
+            if *next_owner == tid {
+                return true;
+            }
+            if *next_owner == cursor {
+                return false;
+            }
+            cursor = *next_owner;
+        }
+        false
+    }
+
+    /// 当前线程真正拿到了 mutex。
+    pub fn on_mutex_acquired(&mut self, tid: ThreadId, mutex_id: usize) {
+        self.register_mutex(mutex_id);
+        self.mutex_waiting.remove(&tid);
+        self.mutex_owners[mutex_id] = Some(tid);
+    }
+
+    /// 当前线程因 mutex 被占用而阻塞。
+    pub fn on_mutex_blocked(&mut self, tid: ThreadId, mutex_id: usize) {
+        self.register_mutex(mutex_id);
+        self.mutex_waiting.insert(tid, mutex_id);
+    }
+
+    /// mutex 解锁后的所有权转移。
+    pub fn on_mutex_unlocked(&mut self, mutex_id: usize, waking_tid: Option<ThreadId>) {
+        self.register_mutex(mutex_id);
+        if let Some(tid) = waking_tid {
+            self.mutex_waiting.remove(&tid);
+            self.mutex_owners[mutex_id] = Some(tid);
+        } else {
+            self.mutex_owners[mutex_id] = None;
+        }
+    }
+
+    /// 检查 semaphore 请求是否会让系统进入不安全状态。
+    pub fn semaphore_should_deadlock(&mut self, tid: ThreadId, sem_id: usize) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        self.ensure_sem_thread(tid);
+        if self.sem_available.get(sem_id).copied().unwrap_or(0) > 0 {
+            return false;
+        }
+        self.sem_need.get_mut(&tid).unwrap()[sem_id] += 1;
+        let safe = self.semaphore_safe();
+        self.sem_need.get_mut(&tid).unwrap()[sem_id] -= 1;
+        !safe
+    }
+
+    fn semaphore_safe(&self) -> bool {
+        let mut work = self.sem_available.clone();
+        let mut tids: Vec<ThreadId> = self
+            .sem_allocation
+            .keys()
+            .chain(self.sem_need.keys())
+            .copied()
+            .collect();
+        tids.sort_unstable();
+        tids.dedup();
+
+        let mut finish: BTreeMap<ThreadId, bool> =
+            tids.iter().copied().map(|tid| (tid, false)).collect();
+        loop {
+            let mut progressed = false;
+            for tid in tids.iter().copied() {
+                if finish[&tid] {
+                    continue;
+                }
+                let need = self.sem_need.get(&tid);
+                let allocation = self.sem_allocation.get(&tid);
+                let can_finish = (0..work.len()).all(|idx| {
+                    let need_count = need.and_then(|v| v.get(idx)).copied().unwrap_or(0);
+                    need_count <= work[idx]
+                });
+                if can_finish {
+                    if let Some(allocation) = allocation {
+                        for (idx, count) in allocation.iter().enumerate() {
+                            work[idx] += count;
+                        }
+                    }
+                    finish.insert(tid, true);
+                    progressed = true;
+                }
+            }
+            if !progressed {
+                break;
+            }
+        }
+        finish.values().all(|done| *done)
+    }
+
+    /// semaphore 立即获取成功。
+    pub fn on_semaphore_down_granted(&mut self, tid: ThreadId, sem_id: usize) {
+        self.ensure_sem_thread(tid);
+        if self.sem_available[sem_id] > 0 {
+            self.sem_available[sem_id] -= 1;
+        }
+        self.sem_allocation.get_mut(&tid).unwrap()[sem_id] += 1;
+        let need = &mut self.sem_need.get_mut(&tid).unwrap()[sem_id];
+        if *need > 0 {
+            *need -= 1;
+        }
+    }
+
+    /// semaphore 资源不足，线程进入等待。
+    pub fn on_semaphore_blocked(&mut self, tid: ThreadId, sem_id: usize) {
+        self.ensure_sem_thread(tid);
+        self.sem_need.get_mut(&tid).unwrap()[sem_id] += 1;
+    }
+
+    /// semaphore 释放后，资源要么回到 Available，要么直接转交给唤醒线程。
+    pub fn on_semaphore_up(
+        &mut self,
+        holder_tid: ThreadId,
+        sem_id: usize,
+        waking_tid: Option<ThreadId>,
+    ) {
+        self.ensure_sem_thread(holder_tid);
+        let holder_allocation = &mut self.sem_allocation.get_mut(&holder_tid).unwrap()[sem_id];
+        if *holder_allocation > 0 {
+            *holder_allocation -= 1;
+        }
+        if let Some(tid) = waking_tid {
+            self.ensure_sem_thread(tid);
+            let need = &mut self.sem_need.get_mut(&tid).unwrap()[sem_id];
+            if *need > 0 {
+                *need -= 1;
+            }
+            self.sem_allocation.get_mut(&tid).unwrap()[sem_id] += 1;
+        } else {
+            self.sem_available[sem_id] += 1;
+        }
+    }
+}
 
 /// 线程（执行单元）
 ///
@@ -84,6 +289,8 @@ pub struct Process {
     pub mutex_list: Vec<Option<Arc<dyn MutexTrait>>>,
     /// 条件变量列表（**本章新增**，所有线程共享）
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// 练习题：当前进程的死锁检测状态
+    pub deadlock: DeadlockState,
 }
 
 impl Process {
@@ -93,6 +300,11 @@ impl Process {
     pub fn exec(&mut self, elf: ElfFile) {
         let (proc, thread) = Process::from_elf(elf).unwrap();
         self.address_space = proc.address_space;
+        self.signal.clear();
+        self.semaphore_list.clear();
+        self.mutex_list.clear();
+        self.condvar_list.clear();
+        self.deadlock = DeadlockState::default();
         let processor: *mut ProcessorInner = PROCESSOR.get_mut() as *mut ProcessorInner;
         unsafe {
             let pthreads = (*processor).get_thread(self.pid).unwrap();
@@ -134,6 +346,7 @@ impl Process {
                 semaphore_list: Vec::new(),
                 mutex_list: Vec::new(),
                 condvar_list: Vec::new(),
+                deadlock: DeadlockState::default(),
             },
             thread,
         ))
@@ -206,6 +419,7 @@ impl Process {
                 semaphore_list: Vec::new(),
                 mutex_list: Vec::new(),
                 condvar_list: Vec::new(),
+                deadlock: DeadlockState::default(),
             },
             thread,
         ))

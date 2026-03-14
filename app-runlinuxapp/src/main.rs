@@ -36,6 +36,7 @@ fn main() {
         use alloc::sync::Arc;
         use axhal::paging::{MappingFlags, PageSize};
         use axmm::backend::{Backend, SharedPages};
+        use axsync::Mutex;
         use memory_addr::va;
 
         // A new address space for user app.
@@ -48,7 +49,7 @@ fn main() {
             .unwrap();
 
         // Load user app ELF binary file into address space.
-        let entry = match loader::load_user_app("/sbin/hello", &mut uspace) {
+        let entry = match loader::load_user_app("/sbin/mapfile", &mut uspace) {
             Ok(e) => e,
             Err(err) => panic!("Cannot load app! {:?}", err),
         };
@@ -63,9 +64,7 @@ fn main() {
             ustack_top
         );
 
-        let stack_pages = Arc::new(
-            SharedPages::new(USER_STACK_SIZE, PageSize::Size4K).unwrap(),
-        );
+        let stack_pages = Arc::new(SharedPages::new(USER_STACK_SIZE, PageSize::Size4K).unwrap());
         uspace
             .map(
                 ustack_vaddr,
@@ -78,7 +77,7 @@ fn main() {
 
         // Set up initial user stack with argc, argv, envp, auxv layout
         // as required by Linux ELF ABI.
-        let app_name = "hello";
+        let app_name = "mapfile";
         let stack_data = kernel_elf_parser::app_stack_region(
             &[String::from(app_name)],
             &[],
@@ -91,6 +90,9 @@ fn main() {
             .unwrap();
 
         ax_println!("New user address space: {:#x?}", uspace);
+
+        let uspace = Arc::new(Mutex::new(uspace));
+        syscall::install_user_aspace(uspace.clone());
 
         // Let's kick off the user process.
         let user_task = task::spawn_user_task(uspace, entry, ustack_pointer.into());

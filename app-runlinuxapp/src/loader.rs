@@ -8,8 +8,8 @@ use axfs::ROOT_FS_CONTEXT;
 use axhal::paging::{MappingFlags, PageSize};
 #[allow(unused_imports)]
 use axio::{Read, Seek, SeekFrom};
-use axmm::backend::{Backend, SharedPages};
 use axmm::AddrSpace;
+use axmm::backend::{Backend, SharedPages};
 use memory_addr::{MemoryAddr, VirtAddr};
 
 // ---- Minimal ELF64 structures ----
@@ -92,9 +92,8 @@ pub fn load_user_app(fname: &str, uspace: &mut AddrSpace) -> Result<usize, axio:
 
     // Process PT_LOAD segments
     for i in 0..phnum {
-        let phdr: Elf64Phdr = unsafe {
-            core::ptr::read_unaligned(phdr_buf.as_ptr().add(i * PHDR_SIZE) as *const _)
-        };
+        let phdr: Elf64Phdr =
+            unsafe { core::ptr::read_unaligned(phdr_buf.as_ptr().add(i * PHDR_SIZE) as *const _) };
 
         if phdr.p_type != PT_LOAD {
             continue;
@@ -116,8 +115,7 @@ pub fn load_user_app(fname: &str, uspace: &mut AddrSpace) -> Result<usize, axio:
 
         // Allocate pages and map them
         let pages = Arc::new(
-            SharedPages::new(map_size, PageSize::Size4K)
-                .map_err(|_| axio::Error::NoMemory)?,
+            SharedPages::new(map_size, PageSize::Size4K).map_err(|_| axio::Error::NoMemory)?,
         );
         uspace
             .map(

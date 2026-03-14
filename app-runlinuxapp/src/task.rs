@@ -3,8 +3,10 @@
 //! Runs the user-space ELF binary in a loop, dispatching syscalls to
 //! the handler in `syscall.rs`.
 
+use alloc::sync::Arc;
 use axhal::uspace::{ReturnReason, UserContext};
 use axmm::AddrSpace;
+use axsync::Mutex;
 use axtask::{AxTaskRef, TaskInner};
 use memory_addr::VirtAddr;
 
@@ -29,19 +31,19 @@ struct AlignedUserContext(UserContext);
 /// The task runs a loop: enter user mode → receive trap → dispatch
 /// (syscall or page fault) → re-enter user mode.
 pub fn spawn_user_task(
-    uspace: AddrSpace,
+    uspace: Arc<Mutex<AddrSpace>>,
     entry: usize,
     ustack_pointer: VirtAddr,
 ) -> AxTaskRef {
-    let page_table_root = uspace.page_table_root();
+    let page_table_root = uspace.lock().page_table_root();
+    let task_uspace = uspace.clone();
 
     let mut task = TaskInner::new(
         move || {
             // Keep uspace alive for the lifetime of this task.
-            let _uspace = uspace;
+            let _uspace = task_uspace;
 
-            let mut aligned_uctx =
-                AlignedUserContext(UserContext::new(entry, ustack_pointer, 0));
+            let mut aligned_uctx = AlignedUserContext(UserContext::new(entry, ustack_pointer, 0));
 
             // Enable FP/SIMD access from user mode (EL0) on aarch64.
             // Musl-compiled binaries use FP instructions even for simple programs.

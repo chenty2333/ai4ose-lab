@@ -5,7 +5,10 @@ use std::process::{self, Command};
 
 /// ArceOS run-linux-app multi-architecture build & run tool
 #[derive(Parser)]
-#[command(name = "xtask", about = "Build and run arceos-runlinuxapp on different architectures")]
+#[command(
+    name = "xtask",
+    about = "Build and run arceos-runlinuxapp on different architectures"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,
@@ -106,6 +109,7 @@ fn find_tool(prefix: &str, tool: &str) -> String {
     // Try known fallback locations
     let home = std::env::var("HOME").unwrap_or_else(|_| "/home".into());
     let fallback_dirs = [
+        format!("{home}/.local/toolchains/{prefix}-cross/bin"),
         format!("{home}/thecodes/{prefix}-cross/bin"),
         format!("/opt/{prefix}-cross/bin"),
         format!("/usr/local/bin"),
@@ -121,14 +125,14 @@ fn find_tool(prefix: &str, tool: &str) -> String {
     name
 }
 
-/// Build the user-space payload (hello.c) for the target architecture.
+/// Build the user-space payload (mapfile.c) for the target architecture.
 /// Equivalent to `make payload` in the original workflow.
 fn build_payload(root: &Path, info: &ArchInfo) -> PathBuf {
-    let payload_dir = root.join("payload");
-    let hello_c = payload_dir.join("hello.c");
+    let payload_dir = root.join("exercise").join("payload").join("mapfile_c");
+    let mapfile_c = payload_dir.join("mapfile.c");
     let out_dir = payload_dir.join("target").join(info.musl_prefix);
     std::fs::create_dir_all(&out_dir).unwrap();
-    let hello_elf = out_dir.join("hello");
+    let mapfile_elf = out_dir.join("mapfile");
 
     let gcc = find_tool(info.musl_prefix, "gcc");
     let strip = find_tool(info.musl_prefix, "strip");
@@ -139,9 +143,9 @@ fn build_payload(root: &Path, info: &ArchInfo) -> PathBuf {
     let status = Command::new(&gcc)
         .args([
             "-static",
-            hello_c.to_str().unwrap(),
+            mapfile_c.to_str().unwrap(),
             "-o",
-            hello_elf.to_str().unwrap(),
+            mapfile_elf.to_str().unwrap(),
         ])
         .status()
         .unwrap_or_else(|e| {
@@ -155,7 +159,7 @@ fn build_payload(root: &Path, info: &ArchInfo) -> PathBuf {
 
     // Strip the binary
     let status = Command::new(&strip)
-        .arg(hello_elf.to_str().unwrap())
+        .arg(mapfile_elf.to_str().unwrap())
         .status()
         .unwrap_or_else(|e| {
             eprintln!("Error: failed to run {}: {}", strip, e);
@@ -165,12 +169,11 @@ fn build_payload(root: &Path, info: &ArchInfo) -> PathBuf {
         eprintln!("Warning: strip failed, continuing with unstripped binary");
     }
 
-    println!("Payload built: {}", hello_elf.display());
-    hello_elf
+    println!("Payload built: {}", mapfile_elf.display());
+    mapfile_elf
 }
 
-/// Create a 64MB FAT32 disk image containing `/sbin/hello`.
-/// Equivalent to `./update_disk.sh payload/hello_c/hello`.
+/// Create a 64MB FAT32 disk image containing `/sbin/mapfile`.
 fn create_fat_disk_image(path: &Path, payload_elf: &Path) {
     const DISK_SIZE: u64 = 64 * 1024 * 1024;
 
@@ -219,9 +222,9 @@ fn create_fat_disk_image(path: &Path, payload_elf: &Path) {
             process::exit(1);
         });
 
-        // Write payload as /sbin/hello
-        let mut f = root_dir.create_file("sbin/hello").unwrap_or_else(|e| {
-            eprintln!("Error: failed to create /sbin/hello: {}", e);
+        // Write payload as /sbin/mapfile
+        let mut f = root_dir.create_file("sbin/mapfile").unwrap_or_else(|e| {
+            eprintln!("Error: failed to create /sbin/mapfile: {}", e);
             process::exit(1);
         });
         f.write_all(&payload_data).unwrap();
@@ -229,7 +232,7 @@ fn create_fat_disk_image(path: &Path, payload_elf: &Path) {
     }
 
     println!(
-        "Created FAT32 disk image: {} ({}MB) with /sbin/hello",
+        "Created FAT32 disk image: {} ({}MB) with /sbin/mapfile",
         path.display(),
         DISK_SIZE / (1024 * 1024)
     );
@@ -250,6 +253,7 @@ fn do_build(root: &Path, info: &ArchInfo) {
             "--manifest-path",
             manifest.to_str().unwrap(),
         ])
+        .env("RUSTC_BOOTSTRAP", "1")
         // Ensure dependencies read the intended config regardless of subprocess cwd.
         .env("AX_CONFIG_PATH", ax_config.to_str().unwrap())
         .status()

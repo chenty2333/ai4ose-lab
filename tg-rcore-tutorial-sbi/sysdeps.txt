@@ -1,0 +1,46 @@
+# sysdeps.txt - 定义本地依赖包的路径映射
+# 格式: "包名" "相对于 systest 目录的路径"
+# 
+# 路径说明:
+#   systest 目录位于: tg-rcore-tutorial-sbi/systest/
+#   目标目录位于: tg-rcore-tutorial-sbi/systest/<crate>/
+#   
+#   相对路径示例:
+#   "../.." → tg-rcore-tutorial/ (根目录)
+#   "../tg-rcore-tutorial-ch1" → tg-rcore-tutorial/tg-rcore-tutorial-ch1
+#
+#   注意: 如果直接使用 "../ch1"， 会相对于 systest 目录
+#        即 tg-rcore-tutorial-sbi/systest/../ch1 = tg-rcore-tutorial-sbi/ch1 (不存在!)
+#        正确写法: "../tg-rcore-tutorial-ch1"
+
+#
+# Layer 0: 基础组件 (无内部依赖)
+"tg-rcore-tutorial-sbi"             "../.."
+"tg-rcore-tutorial-linker"       "../tg-rcore-tutorial-linker"
+"tg-rcore-tutorial-console"      "../tg-rcore-tutorial-console"
+"tg-rcore-tutorial-kernel-context"  "../tg-rcore-tutorial-kernel-context"
+"tg-rcore-tutorial-kernel-alloc"    "../tg-rcore-tutorial-kernel-alloc"
+"tg-rcore-tutorial-kernel-vm"       "../tg-rcore-tutorial-kernel-vm"
+"tg-rcore-tutorial-easy-fs"       "../tg-rcore-tutorial-easy-fs"
+"tg-rcore-tutorial-signal-defs"     "../tg-rcore-tutorial-signal-defs"
+"tg-rcore-tutorial-sync"            "../tg-rcore-tutorial-sync"
+"tg-rcore-tutorial-checker"       "../tg-rcore-tutorial-checker"
+"tg-rcore-tutorial-task-manage"    "../tg-rcore-tutorial-task-manage"
+
+# Layer 1: 中间组件
+"tg-rcore-tutorial-syscall"       "../tg-rcore-tutorial-syscall"
+"tg-rcore-tutorial-signal"        "../tg-rcore-tutorial-signal"
+
+# Layer 2: 上层组件
+"tg-rcore-tutorial-signal-impl"    "../tg-rcore-tutorial-signal-impl"
+"tg-rcore-tutorial-user"          "../tg-rcore-tutorial-user"
+
+# Layer 3: 内核章节 (用于测试)
+"tg-rcore-tutorial-ch1"          "../tg-rcore-tutorial-ch1"
+"tg-rcore-tutorial-ch2"          "../tg-rcore-tutorial-ch2"
+"tg-rcore-tutorial-ch3"          "../tg-rcore-tutorial-ch3"
+"tg-rcore-tutorial-ch4"          "../tg-rcore-tutorial-ch4"
+"tg-rcore-tutorial-ch5"          "../tg-rcore-tutorial-ch5"
+"tg-rcore-tutorial-ch6"          "../tg-rcore-tutorial-ch6"
+"tg-rcore-tutorial-ch7"          "../tg-rcore-tutorial-ch7"
+"tg-rcore-tutorial-ch8"          "../tg-rcore-tutorial-ch8"

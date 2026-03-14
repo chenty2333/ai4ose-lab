@@ -1,0 +1,33 @@
+[package]
+name = "tg-rcore-tutorial"
+version = "0.4.6-preview.2"
+edition = "2024"
+authors = ["YdrMaster <ydrml@hotmail.com>", "Yifan Wang <w-yf22@mails.tsinghua.edu.cn>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "Meta crate bundle for rCore Tutorial workspace - contains all chapters and components"
+keywords = ["rcore", "os", "riscv", "tutorial", "no-std"]
+categories = ["no-std", "embedded"]
+license = "GPL-3.0"
+repository = "https://github.com/rcore-os/tg-rcore-tutorial"
+homepage = "https://github.com/rcore-os/tg-rcore-tutorial"
+documentation = "https://docs.rs/tg-rcore-tutorial"
+readme = "README.md"
+
+# Include only necessary files for distribution
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    ".gitignore",
+    ".gitmodules",
+    "src/**",
+    "bundle/submodules.tar.gz",
+    "scripts/compress_submodules.sh",
+    "scripts/extract_submodules.sh",
+    "scripts/crates.txt",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

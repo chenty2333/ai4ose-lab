@@ -1,0 +1,17 @@
+[package]
+name = "tg-rcore-tutorial-signal"
+description = "Signal handling for rCore tutorial OS."
+version = "0.4.5"
+edition = "2024"
+authors = ["scPointer <jax01@foxmail.com>"]
+repository = "https://github.com/rcore-os/tg-rcore-tutorial-signal"
+homepage = "https://github.com/rcore-os/tg-rcore-tutorial-signal/tree/test"
+documentation = "https://docs.rs/tg-rcore-tutorial-signal"
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["rcore", "signal", "no-std", "riscv"]
+categories = ["no-std", "embedded"]
+
+[dependencies]
+tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", path = "../tg-rcore-tutorial-kernel-context", version = "0.4.5" }
+tg-signal-defs = { package = "tg-rcore-tutorial-signal-defs", path = "../tg-rcore-tutorial-signal-defs", version = "0.4.5" }

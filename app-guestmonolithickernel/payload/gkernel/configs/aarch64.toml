@@ -1,0 +1,81 @@
+# Architecture identifier.
+arch = "aarch64" # str
+# Platform package.
+package = "axplat-aarch64-qemu-virt" # str
+# Platform identifier.
+platform = "aarch64-qemu-virt" # str
+# Stack size of each task.
+task-stack-size = 0x40000 # uint
+# Number of timer ticks per second (Hz). A timer tick may contain several timer
+# interrupts.
+ticks-per-sec = 100 # uint
+
+#
+# Device specifications
+#
+[devices]
+# GIC CPU Interface base address
+gicc-paddr = 0x0801_0000 # uint
+# GIC Distributor base address
+gicd-paddr = 0x0800_0000 # uint
+# IPI interrupt num
+ipi-irq = 1 # uint
+# MMIO ranges with format (`base_paddr`, `size`).
+# Guest only needs UART, RTC, and GIC for console output and interrupts.
+mmio-ranges = [
+    [0x0900_0000, 0x1000],
+    [0x0910_0000, 0x1000],
+    [0x0800_0000, 0x2_0000],
+] # [(uint, uint)]
+# End PCI bus number (`bus-range` property in device tree).
+pci-bus-end = 0xff # uint
+# Base physical address of the PCIe ECAM space.
+pci-ecam-base = 0x40_1000_0000 # uint
+# PCI device memory ranges (`ranges` property in device tree).
+# Guest does not use PCI devices.
+pci-ranges = [] # [(uint, uint)]
+# RTC (PL031) Address
+rtc-paddr = 0x901_0000 # uint
+# Timer interrupt num (PPI, physical timer).
+timer-irq = 30 # uint
+# UART IRQ number (SPI, 1)
+uart-irq = 33 # uint
+# UART Address
+uart-paddr = 0x0900_0000 # uint
+# VirtIO MMIO ranges with format (`base_paddr`, `size`).
+# Guest does not use VirtIO devices.
+virtio-mmio-ranges = [] # [(uint, uint)]
+
+#
+# Platform configs
+#
+[plat]
+# Stack size on bootstrapping. (256K)
+boot-stack-size = 0x40000 # uint
+# Number of CPUs.
+cpu-num = 1 # uint
+# Kernel address space base.
+kernel-aspace-base = "0xffff_0000_0000_0000" # uint
+# Kernel address space size.
+kernel-aspace-size = "0x0000_ffff_ffff_f000" # uint
+# Base physical address of the kernel image.
+# Guest kernel is loaded at the upper 64MB region (0x44200000)
+# to avoid overlap with the hypervisor (loaded at 0x40200000).
+kernel-base-paddr = 0x4420_0000 # uint
+# Base virtual address of the kernel image.
+kernel-base-vaddr = "0xffff_0000_4420_0000" # uint
+# Offset of bus address and phys address. some boards, the bus address is
+# different from the physical address.
+phys-bus-offset = 0 # uint
+# Base address of the whole physical memory.
+# Guest uses the upper 64MB of the 128MB QEMU RAM.
+phys-memory-base = 0x4400_0000 # uint
+# Size of the whole physical memory. (64M)
+phys-memory-size = 0x400_0000 # uint
+# Linear mapping offset, for quick conversions between physical and virtual
+# addresses.
+phys-virt-offset = "0xffff_0000_0000_0000" # uint
+# PSCI
+# With `-machine virt,virtualization=on`, PSCI is handled at EL3 via SMC.
+# The EL2 stub does not forward HVC-based PSCI calls, so "smc" is required.
+psci-method = "smc" # str

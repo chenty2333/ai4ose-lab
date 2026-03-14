@@ -1,0 +1,91 @@
+#![cfg_attr(feature = "axstd", no_std)]
+#![cfg_attr(feature = "axstd", no_main)]
+
+#[cfg(feature = "axstd")]
+extern crate axstd as std;
+
+#[cfg(feature = "axstd")]
+extern crate alloc;
+
+#[cfg(feature = "axstd")]
+#[macro_use]
+extern crate axlog;
+
+#[cfg(feature = "axstd")]
+extern crate axfs;
+#[cfg(feature = "axstd")]
+extern crate axio;
+
+#[cfg(feature = "axstd")]
+mod loader;
+#[cfg(feature = "axstd")]
+mod syscall;
+#[cfg(feature = "axstd")]
+mod task;
+
+#[cfg(feature = "axstd")]
+const USER_STACK_SIZE: usize = 0x10000;
+#[cfg(feature = "axstd")]
+const KERNEL_STACK_SIZE: usize = 0x40000; // 256 KiB
+#[cfg(feature = "axstd")]
+const APP_ENTRY: usize = 0x1000;
+
+#[cfg_attr(feature = "axstd", unsafe(no_mangle))]
+fn main() {
+    #[cfg(feature = "axstd")]
+    {
+        use alloc::sync::Arc;
+        use axhal::paging::{MappingFlags, PageSize};
+        use axmm::backend::SharedPages;
+        use memory_addr::va;
+
+        // A new address space for user app (equivalent to axmm::new_user_aspace()).
+        // User space: [0x0, 0x40_0000_0000) — 256GB, below kernel space.
+        let mut uspace = axmm::AddrSpace::new_empty(va!(0x0), 0x40_0000_0000).unwrap();
+
+        // Copy kernel page table entries so kernel code is accessible in user tasks.
+        uspace
+            .copy_mappings_from(&axmm::kernel_aspace().lock())
+            .unwrap();
+
+        // Load user app binary file into address space.
+        if let Err(e) = loader::load_user_app("/sbin/origin", &mut uspace) {
+            panic!("Cannot load app! {:?}", e);
+        }
+
+        // Init user stack.
+        let ustack_top = uspace.end();
+        let ustack_vaddr = ustack_top - USER_STACK_SIZE;
+        ax_println!(
+            "Mapping user stack: {:#x?} -> {:#x?}",
+            ustack_vaddr,
+            ustack_top
+        );
+        let stack_pages = Arc::new(
+            SharedPages::new(USER_STACK_SIZE, PageSize::Size4K).unwrap(),
+        );
+        uspace
+            .map(
+                ustack_vaddr,
+                USER_STACK_SIZE,
+                MappingFlags::READ | MappingFlags::WRITE | MappingFlags::USER,
+                true,
+                axmm::backend::Backend::new_shared(ustack_vaddr, stack_pages),
+            )
+            .unwrap();
+
+        ax_println!("New user address space: {:#x?}", uspace);
+
+        // Let's kick off the user process.
+        let user_task = task::spawn_user_task(uspace, ustack_top);
+
+        // Wait for user process to exit ...
+        let exit_code = user_task.join();
+        ax_println!("monolithic kernel exit [{:?}] normally!", exit_code);
+    }
+    #[cfg(not(feature = "axstd"))]
+    {
+        println!("This application requires the 'axstd' feature for user-privilege execution.");
+        println!("Run with: cargo xtask run [--arch <ARCH>]");
+    }
+}

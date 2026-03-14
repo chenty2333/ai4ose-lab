@@ -1,0 +1,37 @@
+[package]
+name = "arceos-readpflash"
+version = "0.4.6"
+edition = "2024"
+authors = ["Lei Shi <shi_lei@massclouds.com>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "A PFlash reader crate (from crates.io) for ArceOS with MMIO remapping via page tables"
+license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
+homepage = "https://github.com/arceos-org/app-readpflash"
+repository = "https://github.com/arceos-org/app-readpflash/tree/dev"
+keywords = ["arceos", "example", "pflash"]
+categories = ["os", "no-std"]
+include = [
+    "src/**",
+    "build.rs",
+    "configs/**",
+    "xtask/src/**",
+    ".cargo/config.toml",
+    "rust-toolchain.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[features]
+default = ["axstd"]
+axstd = ["dep:axstd"]
+xtask = ["dep:clap"]
+
+[[bin]]
+name = "xtask"
+path = "xtask/src/main.rs"
+required-features = ["xtask"]
+
+[dependencies]
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging"], optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[profile.release]

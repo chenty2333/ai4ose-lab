@@ -1,0 +1,5 @@
+[alias]
+xtask = "run --bin xtask --no-default-features --features xtask --"
+
+[env]
+AX_CONFIG_PATH = { value = ".axconfig.toml", relative = true }

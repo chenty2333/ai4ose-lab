@@ -1,0 +1,13 @@
+[package]
+name = "gkernel"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# axstd is only used for riscv64 (full ArceOS guest with multitasking).
+# aarch64 and x86_64 use bare-metal mode (no axstd).
+default = []
+axstd = ["dep:axstd"]
+
+[dependencies]
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging", "multitask", "sched-cfs"], optional = true }

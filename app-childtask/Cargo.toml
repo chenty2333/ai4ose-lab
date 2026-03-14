@@ -1,0 +1,38 @@
+[package]
+name = "arceos-childtask"
+version = "0.4.6"
+edition = "2024"
+authors = ["Lei Shi <shi_lei@massclouds.com>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "A multi-task child-thread crate (from crates.io) for ArceOS with PFlash MMIO access via page tables"
+license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
+homepage = "https://github.com/arceos-org/app-childtask"
+repository = "https://github.com/arceos-org/app-childtask"
+keywords = ["arceos", "example", "multitask", "pflash"]
+categories = ["os", "no-std"]
+include = [
+    "src/**",
+    "build.rs",
+    "configs/**",
+    "xtask/src/**",
+    ".cargo/config.toml",
+    "rust-toolchain.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[features]
+default = ["axstd"]
+axstd = ["dep:axstd"]
+multitask = ["axstd?/multitask"]
+xtask = ["dep:clap"]
+
+[[bin]]
+name = "xtask"
+path = "xtask/src/main.rs"
+required-features = ["xtask"]
+
+[dependencies]
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging"], optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[profile.release]

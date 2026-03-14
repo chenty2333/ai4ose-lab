@@ -1,0 +1,2 @@
+scripts/* -linguist-detectable
+Makefile -linguist-detectable

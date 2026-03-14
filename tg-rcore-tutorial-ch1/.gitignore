@@ -1,5 +1,0 @@
-target
-*.asm
-*.bin
-*.img
-Cargo.lock

@@ -1,0 +1,71 @@
+[package]
+name = "arceos-runlinuxapp"
+version = "0.4.6"
+edition = "2024"
+authors = ["Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "Run Linux ELF applications on ArceOS: loads and runs a user-space Linux app (compiled with musl libc) with ELF parsing, syscall handling, and multi-architecture support"
+license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
+homepage = "https://github.com/arceos-org/app-runlinuxapp"
+repository = "https://github.com/arceos-org/app-runlinuxapp/tree/dev"
+keywords = ["arceos", "uspace", "linux", "elf", "os"]
+categories = ["os", "no-std"]
+include = [
+    "src/**",
+    "build.rs",
+    "configs/**",
+    "payload/*.c",
+    "xtask/src/**",
+    ".cargo/config.toml",
+    "rust-toolchain.toml",
+    "README.md",
+    "LICENSE*",
+    "exercise/**",
+]
+
+[features]
+default = []
+# NOTE: axstd/fs is NOT used because arceos_api 0.2.2-preview.1 has an API
+# mismatch with axfs 0.2.2-preview.1. Instead, we enable filesystem via
+# axfeat/fs + axfeat/fs-fat and use axfs directly for file operations.
+axstd = [
+    "dep:axstd", "dep:axfeat", "dep:axfs", "dep:axio",
+    "dep:axmm", "dep:axhal", "dep:axsync", "dep:axtask", "dep:axlog",
+    "dep:axerrno", "dep:memory_addr",
+    "dep:kernel-elf-parser",
+]
+xtask = ["dep:clap", "dep:fatfs"]
+
+[[bin]]
+name = "xtask"
+path = "xtask/src/main.rs"
+required-features = ["xtask"]
+
+[dependencies]
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging", "multitask", "sched-cfs", "uspace"], optional = true }
+# Enable FS init in axruntime (bypasses broken arceos_api/fs)
+axfeat = { version = "0.2.2-preview.1", features = ["fs", "fs-fat"], optional = true }
+# Direct filesystem access API
+axfs = { version = "0.2.2-preview.1", features = ["fat"], optional = true }
+# I/O traits (Read, Write, Seek)
+axio = { version = "0.3.0-pre.1", optional = true }
+# Memory management - user address spaces
+axmm = { version = "0.2.2-preview.1", features = ["copy"], optional = true }
+# HAL - UserContext, paging, trap handling
+axhal = { version = "0.2.2-preview.3", features = ["uspace"], optional = true }
+# Synchronization primitives
+axsync = { version = "0.2.2-preview.1", optional = true }
+# Task management
+axtask = { version = "0.2.2-preview.3", optional = true }
+# Logging (ax_println!)
+axlog = { version = "0.2.2-preview.1", optional = true }
+# Error types
+axerrno = { version = "0.1", optional = true }
+# Address types
+memory_addr = { version = "0.4", optional = true }
+# ELF stack layout for Linux user-space apps
+kernel-elf-parser = { version = "0.3", optional = true }
+
+clap = { version = "4", features = ["derive"], optional = true }
+fatfs = { version = "0.3.6", optional = true }
+
+[profile.release]

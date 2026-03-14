@@ -1,9 +1,0 @@
-# systest_sbi.txt - sbi 专用测试配置文件
-# 仅用于测试 sbi 组件本身
-#
-# 用法:
-#   ./systest.sh -f systest_sbi.txt -l tg-rcore-tutorial-sbi
-#
-# 说明: sbi 测试需要特殊处理，# 因为 sbi 没有测试输出（test.sh base），
-# 只有简单的编译检查
-"tg-rcore-tutorial-sbi"  "cargo check" "Checking"

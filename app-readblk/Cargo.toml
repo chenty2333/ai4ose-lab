@@ -1,0 +1,38 @@
+[package]
+name = "arceos-readblk"
+version = "0.4.6"
+edition = "2024"
+authors = ["Lei Shi <shi_lei@massclouds.com>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "A block device reader crate (from crates.io) for ArceOS demonstrating VirtIO-blk driver discovery and disk I/O"
+license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
+homepage = "https://github.com/arceos-org/app-readblk"
+repository = "https://github.com/arceos-org/app-readblk/tree/dev"
+keywords = ["arceos", "example", "block-device", "virtio", "driver"]
+categories = ["os", "no-std"]
+include = [
+    "src/**",
+    "build.rs",
+    "configs/**",
+    "xtask/src/**",
+    ".cargo/config.toml",
+    "rust-toolchain.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[features]
+default = []
+axstd = ["dep:axstd", "dep:axdriver"]
+xtask = ["dep:clap"]
+
+[[bin]]
+name = "xtask"
+path = "xtask/src/main.rs"
+required-features = ["xtask"]
+
+[dependencies]
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging", "multitask", "sched-cfs"], optional = true }
+axdriver = { version = "0.2.2-preview.1", features = ["virtio-blk"], optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[profile.release]

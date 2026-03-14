@@ -1,0 +1,50 @@
+[package]
+name = "arceos-loadapp"
+version = "0.4.6"
+edition = "2024"
+authors = ["Lei Shi <shi_lei@massclouds.com>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "A filesystem-based app loader crate (from crates.io) for ArceOS demonstrating FAT-fs initialization and file I/O"
+license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
+homepage = "https://github.com/arceos-org/app-loadapp"
+repository = "https://github.com/arceos-org/app-loadapp/tree/dev"
+keywords = ["arceos", "example", "filesystem", "fat", "driver"]
+categories = ["os", "no-std"]
+include = [
+    "src/**",
+    "build.rs",
+    "configs/**",
+    "xtask/src/**",
+    ".cargo/config.toml",
+    "rust-toolchain.toml",
+    "README.md",
+    "LICENSE*",
+    "exercise/**",
+]
+
+[features]
+default = []
+# NOTE: axstd/fs is NOT used because arceos_api 0.2.2-preview.1 has an API
+# mismatch with axfs 0.2.2-preview.1 (axfs::fops/api modules removed).
+# Instead, we enable filesystem initialization via axfeat/fs + axfeat/fs-fat
+# and use axfs directly for file operations.
+axstd = ["dep:axstd", "dep:axfeat", "dep:axfs", "dep:axio"]
+xtask = ["dep:clap", "dep:fatfs"]
+
+[[bin]]
+name = "xtask"
+path = "xtask/src/main.rs"
+required-features = ["xtask"]
+
+[dependencies]
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging", "multitask", "sched-cfs"], optional = true }
+# Enable FS init in axruntime (bypasses broken arceos_api/fs)
+axfeat = { version = "0.2.2-preview.1", features = ["fs", "fs-fat"], optional = true }
+# Direct filesystem access API
+axfs = { version = "0.2.2-preview.1", features = ["fat"], optional = true }
+# I/O traits (Read, Write, Seek)
+axio = { version = "0.3.0-pre.1", optional = true }
+
+clap = { version = "4", features = ["derive"], optional = true }
+fatfs = { version = "0.3.6", optional = true }
+
+[profile.release]

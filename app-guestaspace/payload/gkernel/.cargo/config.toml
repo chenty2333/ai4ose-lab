@@ -1,0 +1,2 @@
+[env]
+AX_CONFIG_PATH = { value = ".axconfig.toml", relative = true }

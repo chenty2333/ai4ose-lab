@@ -1,0 +1,79 @@
+[package]
+name = "arceos-guestvdev"
+version = "0.4.6"
+edition = "2024"
+authors = ["Lei Shi <shi_lei@massclouds.com>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+description = "ArceOS Guest Virtual Device (Hypervisor): runs a guest OS with virtual device support (timer, console, NPF passthrough) — RISC-V H-extension, ARM AArch64 EL2, and AMD SVM"
+homepage = "https://github.com/arceos-org/app-guestvdev"
+repository = "https://github.com/arceos-org/app-guestvdev"
+license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
+keywords = ["arceos", "hypervisor", "riscv", "aarch64", "x86_64"]
+categories = ["os", "no-std"]
+include = [
+    "src/**",
+    "build.rs",
+    "configs/**",
+    "payload/gkernel/src/**",
+    "payload/gkernel/configs/**",
+    "payload/gkernel/linker-*.ld",
+    "xtask/src/**",
+    ".cargo/config.toml",
+    "rust-toolchain.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[features]
+default = []
+axstd = ["dep:axstd"]
+guest-kernel = ["axstd", "axstd/multitask", "axstd/sched-cfs"]
+hypervisor = [
+    "axstd", "dep:axfeat", "dep:axfs", "dep:axio",
+    "dep:axmm", "dep:axhal", "dep:axsync", "dep:axtask", "dep:axlog",
+    "dep:axerrno", "dep:memory_addr",
+    "dep:memoffset",
+    "axstd/multitask", "axstd/sched-cfs",
+]
+xtask = ["dep:clap", "dep:fatfs"]
+
+[[bin]]
+name = "xtask"
+path = "xtask/src/main.rs"
+required-features = ["xtask"]
+
+[[bin]]
+name = "gkernel"
+path = "payload/gkernel/src/main.rs"
+required-features = ["guest-kernel"]
+
+[dependencies]
+# ─── ArceOS crates (common, all architectures) ───
+axstd = { version = "0.2.2-preview.1", features = ["defplat", "alloc", "paging"], optional = true }
+axfeat = { version = "0.2.2-preview.1", features = ["fs", "fs-fat"], optional = true }
+axfs = { version = "0.2.2-preview.1", features = ["fat"], optional = true }
+axio = { version = "0.3.0-pre.1", optional = true }
+axmm = { version = "0.2.2-preview.1", features = ["copy"], optional = true }
+axhal = { version = "0.2.2-preview.3", features = ["uspace"], optional = true }
+axsync = { version = "0.2.2-preview.1", optional = true }
+axtask = { version = "0.2.2-preview.3", optional = true }
+axlog = { version = "0.2.2-preview.1", optional = true }
+axerrno = { version = "0.1", optional = true }
+memory_addr = { version = "0.4", optional = true }
+memoffset = { version = ">=0.6.5", features = ["unstable_const"], optional = true }
+
+# ─── Xtask dependencies ───
+clap = { version = "4", features = ["derive"], optional = true }
+fatfs = { version = "0.3.6", optional = true }
+
+# ─── RISC-V specific (only compiled when target_arch = riscv64) ───
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+sbi-spec = { version = "0.0.6", features = ["legacy"] }
+riscv = { version = "0.11" }
+sbi-rt = { version = "0.0.2", features = ["integer-impls", "legacy"] }
+tock-registers = { version = "0.8.1" }
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

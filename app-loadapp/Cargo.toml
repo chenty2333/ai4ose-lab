@@ -27,7 +27,7 @@ default = []
 # mismatch with axfs 0.2.2-preview.1 (axfs::fops/api modules removed).
 # Instead, we enable filesystem initialization via axfeat/fs + axfeat/fs-fat
 # and use axfs directly for file operations.
-axstd = ["dep:axstd", "dep:axfeat", "dep:axfs", "dep:axio"]
+axstd = ["dep:axstd", "dep:axfeat", "dep:axfs", "dep:axio", "dep:axfs_ng_vfs"]
 xtask = ["dep:clap", "dep:fatfs"]
 
 [[bin]]
@@ -43,8 +43,12 @@ axfeat = { version = "0.2.2-preview.1", features = ["fs", "fs-fat"], optional = 
 axfs = { version = "0.2.2-preview.1", features = ["fat"], optional = true }
 # I/O traits (Read, Write, Seek)
 axio = { version = "0.3.0-pre.1", optional = true }
+axfs_ng_vfs = { package = "axfs-ng-vfs", version = "0.1.0", optional = true }
 
 clap = { version = "4", features = ["derive"], optional = true }
 fatfs = { version = "0.3.6", optional = true }
+
+[patch.crates-io]
+axfs = { path = "vendor-axfs" }
 
 [profile.release]

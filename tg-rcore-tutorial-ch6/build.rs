@@ -204,6 +204,8 @@ fn ensure_tg_user() -> PathBuf {
         }
     }
 
+    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+
     // 从 .cargo/config.toml [env] 读取三个配置项
     let crate_name = env::var("TG_USER_CRATE")
         .expect("TG_USER_CRATE not set; add it to .cargo/config.toml [env]");
@@ -212,7 +214,14 @@ fn ensure_tg_user() -> PathBuf {
     let version = env::var("TG_USER_VERSION")
         .expect("TG_USER_VERSION not set; add it to .cargo/config.toml [env]");
 
-    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    // 工作区中已经存在 sibling crate 时，优先直接复用。
+    if let Some(workspace_root) = manifest_dir.parent() {
+        let sibling_tg_user_dir = workspace_root.join(&local_dir_name);
+        if sibling_tg_user_dir.join("Cargo.toml").exists() {
+            return sibling_tg_user_dir;
+        }
+    }
+
     let tg_user_dir = manifest_dir.join(&local_dir_name);
 
     // 本地缓存目录已存在则直接使用

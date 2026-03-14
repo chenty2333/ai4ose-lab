@@ -342,12 +342,13 @@ mod impls {
     use crate::{
         build_flags,
         fs::{read_all, FS},
+        parse_flags,
         process::Process as ProcStruct,
         processor::ProcManager,
         Sv39, PROCESSOR,
     };
     use alloc::vec::Vec;
-    use alloc::{alloc::alloc_zeroed, string::String};
+    use alloc::{alloc::{alloc_zeroed, dealloc}, string::String};
     use core::{alloc::Layout, ptr::NonNull};
     use spin::Mutex;
     use tg_console::log;
@@ -414,11 +415,29 @@ mod impls {
             *flags |= Self::OWNED;
             NonNull::new(Self::page_alloc(len)).unwrap()
         }
-        fn deallocate(&mut self, _pte: Pte<Sv39>, _len: usize) -> usize {
-            todo!()
+        fn deallocate(&mut self, pte: Pte<Sv39>, len: usize) -> usize {
+            let ptr: NonNull<u8> = self.p_to_v(pte.ppn());
+            unsafe {
+                dealloc(
+                    ptr.as_ptr(),
+                    Layout::from_size_align_unchecked(
+                        len << Sv39::PAGE_BITS,
+                        1 << Sv39::PAGE_BITS,
+                    ),
+                );
+            }
+            len
         }
         fn drop_root(&mut self) {
-            todo!()
+            unsafe {
+                dealloc(
+                    self.0.as_ptr() as *mut u8,
+                    Layout::from_size_align_unchecked(
+                        1 << Sv39::PAGE_BITS,
+                        1 << Sv39::PAGE_BITS,
+                    ),
+                );
+            }
         }
     }
 
@@ -728,14 +747,30 @@ mod impls {
             current.pid.get_usize() as _
         }
 
-        /// spawn 系统调用（TODO 练习题）
-        fn spawn(&self, _caller: Caller, _path: usize, _count: usize) -> isize {
-            let current = PROCESSOR.get_mut().current().unwrap();
-            tg_console::log::info!(
-                "spawn: parent pid = {}, not implemented",
-                current.pid.get_usize()
-            );
-            -1
+        /// spawn 系统调用：从文件系统加载程序并创建子进程
+        fn spawn(&self, _caller: Caller, path: usize, count: usize) -> isize {
+            const READABLE: VmFlags<Sv39> = build_flags("RV");
+            let processor: *mut PManager<ProcStruct, ProcManager> = PROCESSOR.get_mut() as *mut _;
+            let current = unsafe { (*processor).current().unwrap() };
+            let parent_pid = current.pid;
+            current
+                .address_space
+                .translate::<u8>(VAddr::new(path), READABLE)
+                .map(|ptr| unsafe {
+                    core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr.as_ptr(), count))
+                })
+                .and_then(|name| FS.open(name, OpenFlags::RDONLY))
+                .and_then(|fd| {
+                    let elf_data = read_all(fd);
+                    ElfFile::new(&elf_data)
+                        .ok()
+                        .and_then(ProcStruct::from_elf)
+                })
+                .map_or(-1, |child_proc| {
+                    let pid = child_proc.pid;
+                    unsafe { (*processor).add(pid, child_proc, parent_pid) };
+                    pid.get_usize() as isize
+                })
         }
 
         /// sbrk 系统调用：调整堆大小
@@ -800,7 +835,7 @@ mod impls {
 
     /// 内存管理系统调用实现
     impl Memory for SyscallContext {
-        /// mmap 系统调用（TODO 练习题）
+        /// mmap 系统调用：映射匿名内存
         fn mmap(
             &self,
             _caller: Caller,
@@ -811,16 +846,57 @@ mod impls {
             _fd: i32,
             _offset: usize,
         ) -> isize {
-            tg_console::log::info!(
-                "mmap: addr = {addr:#x}, len = {len}, prot = {prot}, not implemented"
-            );
-            -1
+            const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+            if addr % PAGE_SIZE != 0 || len == 0 || prot == 0 || prot > 7 {
+                return -1;
+            }
+            let mut flags: [u8; 5] = *b"U___V";
+            if prot & 4 != 0 {
+                flags[1] = b'X';
+            }
+            if prot & 2 != 0 {
+                flags[2] = b'W';
+            }
+            if prot & 1 != 0 {
+                flags[3] = b'R';
+            }
+            let vm_flags =
+                parse_flags(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap();
+            let start_vpn = VAddr::<Sv39>::new(addr).floor();
+            let end_vpn = VAddr::<Sv39>::new(addr + len).ceil();
+            let current = PROCESSOR.get_mut().current().unwrap();
+            for area in &current.address_space.areas {
+                if area.start.val() < end_vpn.val() && start_vpn.val() < area.end.val() {
+                    return -1;
+                }
+            }
+            current.address_space.map(start_vpn..end_vpn, &[], 0, vm_flags);
+            0
         }
 
-        /// munmap 系统调用（TODO 练习题）
+        /// munmap 系统调用：取消匿名映射
         fn munmap(&self, _caller: Caller, addr: usize, len: usize) -> isize {
-            tg_console::log::info!("munmap: addr = {addr:#x}, len = {len}, not implemented");
-            -1
+            const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+            if addr % PAGE_SIZE != 0 || len == 0 {
+                return -1;
+            }
+            let start_vpn = VAddr::<Sv39>::new(addr).floor();
+            let end_vpn = VAddr::<Sv39>::new(addr + len).ceil();
+            let current = PROCESSOR.get_mut().current().unwrap();
+            let mut vpn = start_vpn.val();
+            while vpn < end_vpn.val() {
+                let covered = current
+                    .address_space
+                    .areas
+                    .iter()
+                    .any(|area| vpn >= area.start.val() && vpn < area.end.val());
+                if !covered {
+                    return -1;
+                }
+                vpn += 1;
+            }
+            current.address_space.unmap(start_vpn..end_vpn);
+            0
         }
     }
 }

@@ -256,9 +256,9 @@ impl Inode {
     /// Remove a directory entry by name
     pub fn remove_dirent(&self, name: &str) -> Option<()> {
         let _fs = self.fs.lock();
-        self.modify_disk_inode(|root_inode| {
+        let removed = self.modify_disk_inode(|root_inode| {
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
-         let mut dirent = DirEntry::empty();
+            let mut dirent = DirEntry::empty();
             // Find the dirent to remove
             for i in 0..file_count {
                 assert_eq!(
@@ -282,11 +282,14 @@ impl Inode {
                     // Decrease size
                     let new_size = (file_count - 1) * DIRENT_SZ;
                     root_inode.size = new_size as u32;
-                    block_cache_sync_all();
                     return Some(());
                 }
             }
             None
-        })
+        });
+        if removed.is_some() {
+            block_cache_sync_all();
+        }
+        removed
     }
 }
